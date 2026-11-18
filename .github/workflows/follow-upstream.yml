@@ -21,6 +21,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build:
@@ -51,6 +52,7 @@ jobs:
           if ($force) { $built = $false }
           "built=$($built.ToString().ToLower())" >> $env:GITHUB_OUTPUT
           Write-Host "version=$v built=$built force=$force"
+          exit 0
 
       - name: 下载官方安装包
         if: steps.gate.outputs.built == 'false'
