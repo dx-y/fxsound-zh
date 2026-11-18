@@ -12,7 +12,7 @@ on:
       draft:
         description: '先建草稿（不公开下载）'
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: write
@@ -47,8 +47,18 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="v${{ inputs.version }}-zh"
+          {
+            echo "基于官方 ${{ inputs.version }} 安装包，仅将预设显示名改为中文，其余与官方一致。"
+            echo ""
+            echo "- 安装版：\`FxSound-zh-CN-${{ inputs.version }}-setup.exe\`"
+            echo "- 便携版：\`FxSound-zh-CN-${{ inputs.version }}-portable.zip\`（解压后先以管理员身份运行 \`安装驱动.cmd\`，否则无输出设备）"
+            echo ""
+            echo "非官方版本，与 FxSound LLC 无隶属关系。程序、驱动与数字签名均为官方原件，未做修改。请支持官方正版：https://www.fxsound.com"
+            echo ""
+            echo "对应源码见上游仓库 https://github.com/fxsound2/fxsound-app （AGPL-3.0）。"
+          } > notes.md
           gh release create "$TAG" dist/*.zip dist/*.exe dist/VERSION.txt \
             --repo "${{ github.repository }}" \
             --title "FxSound 中文预设增强版 ${{ inputs.version }}" \
-            --notes "跟随官方 ${{ inputs.version }} 的汉化封装版（安装版 + 便携版）。预设名汉化为中文，其余与官方一致。" \
+            --notes-file notes.md \
             ${{ inputs.draft && '--draft' || '' }}
