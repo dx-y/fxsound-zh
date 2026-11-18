@@ -44,10 +44,11 @@
 presets/zh/            13 个已汉化的 .fac 成品
 presets/preset-map.json 上游名→中文名映射（脚本按文件名+行号定位，上游改名不影响）
 scripts/fetch_upstream.py  探测上游版本 → GITHUB_OUTPUT
-scripts/unpack_official.ps1 解包官方 setup.exe（7z 拆壳 + msiexec /a 展开）→ 定位程序目录
+scripts/unpack_official.ps1 静默安装官方 setup.exe 后复制安装目录 → 定位程序目录（回退 7z+msiexec /a）
 scripts/patch_presets.py   幂等注入中文预设名
 packaging/make_portable.ps1 组装便携 zip + SHA256
 packaging/install_core.ps1  安装版核心逻辑（官方静默安装 + 覆盖中文预设 + 失败回退交互安装）
+packaging/uninstall_core.ps1 卸载时调用官方卸载入口，保证程序/驱动干净移除
 packaging/installer.iss     Inno Setup 安装器工程
 ```
 
@@ -55,7 +56,7 @@ packaging/installer.iss     Inno Setup 安装器工程
 
 - 安装版依赖官方安装器的静默参数（`/exenoui /qn` → `/quiet` → `/i /qn` 依次尝试，全失败则回退交互式安装），
   不同大版本若改打包器需同步调整 `install_core.ps1`。
-- 便携版必须手动装一次虚拟音频驱动（`安装驱动.cmd`，调用上游自带 `ptdevcon64.exe install dfx12.inf Root\FXVAD`），
+- 便携版必须手动装一次虚拟音频驱动（`安装驱动.cmd`，调用上游自带 `fxdevcon64.exe install Drivers\win10\x64\fxvad.inf Root\FXVAD`），
   不装驱动则 FxSound 无输出设备。
 - 上游驱动带官方签名，禁止重签或修改 inf/sys/cat。
 
