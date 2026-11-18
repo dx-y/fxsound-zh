@@ -5,7 +5,7 @@
 
 ## 下载
 
-见 [Releases](../../releases)。
+见 [Releases](https://github.com/dx-y/fxsound-zh/releases)。
 
 | 产物 | 说明 |
 | --- | --- |
