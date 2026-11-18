@@ -11,6 +11,13 @@
 """
 import argparse, json, os, sys
 
+# Windows CI 的默认 stdout 编码可能是 cp1252，打印中文会 UnicodeEncodeError，统一改 UTF-8
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 def read_bytes(p):
     with open(p, "rb") as f:
         return f.read()
