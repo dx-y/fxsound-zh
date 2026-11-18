@@ -1,6 +1,7 @@
 work/
 vendor/
 dist/
+dist-local/
 *.log
 __pycache__/
 *.pyc
