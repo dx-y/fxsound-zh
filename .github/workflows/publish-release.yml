@@ -58,7 +58,7 @@ jobs:
             echo ""
             echo "对应源码见上游仓库 https://github.com/fxsound2/fxsound-app （AGPL-3.0）。"
           } > notes.md
-          gh release create "$TAG" dist/*.zip dist/*.exe dist/VERSION.txt \
+          gh release create "$TAG" dist/FxSound-zh-CN-*.zip dist/FxSound-zh-CN-*.exe dist/VERSION.txt \
             --repo "${{ github.repository }}" \
             --title "FxSound 中文预设增强版 ${{ inputs.version }}" \
             --notes-file notes.md \
