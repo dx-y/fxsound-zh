@@ -87,9 +87,10 @@ jobs:
           $fv = ($lines | Where-Object { $_ -like 'FILE_VERSION=*' } | Select-Object -Last 1) -replace '^FILE_VERSION=', ''
           "file_version=$fv" >> $env:GITHUB_OUTPUT
           Write-Host "官方程序实际版本: $fv"
-          $drv = Get-ChildItem $root -Recurse -Filter 'dfx*.inf' -ErrorAction SilentlyContinue | Select-Object -First 1
-          "driver_inf=$($drv.FullName)" >> $env:GITHUB_OUTPUT
-          Write-Host "驱动 inf: $($drv.FullName)"
+          $drv = Get-ChildItem $root -Recurse -Include 'fxvad*.inf','dfx*.inf' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $drv) { $drv = Get-ChildItem $root -Recurse -Filter '*.inf' -ErrorAction SilentlyContinue | Select-Object -First 1 }
+          if ($drv) { "driver_inf=$($drv.FullName)" >> $env:GITHUB_OUTPUT; Write-Host "驱动 inf: $($drv.FullName)" } else { Write-Host "!! 未找到 inf（便携版驱动脚本将跳过）" }
+          exit 0
 
       - name: 注入中文预设名
         if: steps.gate.outputs.built == 'false'
