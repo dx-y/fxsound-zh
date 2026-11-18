@@ -1,0 +1,138 @@
+name: follow-upstream
+
+# 只做「跟随官方最新版自动打包」，绝不自建 Release。
+# 产物以 Actions Artifact 形式留存（默认保留 90 天）；
+# 需要发布到 GitHub Release 时，请人工运行 publish-release.yml（主人明确说"同步"后才跑）。
+
+on:
+  schedule:
+    - cron: '17 3 * * *'      # 每天 03:17 UTC = 11:17 北京时间
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'stable = 官方正式版，beta = 官方 beta'
+        type: choice
+        options: [stable, beta]
+        default: stable
+      force:
+        description: '忽略"该版本已构建"跳过，强制重建'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 探测上游最新版本
+        id: up
+        shell: pwsh
+        run: |
+          $ch = '${{ github.event.inputs.channel }}'
+          if (-not $ch) { $ch = 'stable' }
+          python scripts/fetch_upstream.py --channel $ch
+
+      - name: 是否已构建过该版本
+        id: gate
+        shell: pwsh
+        run: |
+          $v = '${{ steps.up.outputs.version }}'
+          $force = '${{ github.event.inputs.force }}' -eq 'true'
+          $want = "fxsound-zh-$v"
+          $names = @()
+          try { $names = @(gh api "repos/${{ github.repository }}/actions/artifacts?per_page=100" --jq '.artifacts[].name') } catch { $names = @() }
+          $built = $names -contains $want
+          if ($force) { $built = $false }
+          "built=$($built.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          Write-Host "version=$v built=$built force=$force"
+
+      - name: 下载官方安装包
+        if: steps.gate.outputs.built == 'false'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path work, vendor, dist | Out-Null
+          $url = '${{ steps.up.outputs.asset_url }}'
+          $id  = '${{ steps.up.outputs.asset_id }}'
+          $out = 'vendor\fxsound_setup.exe'
+          try {
+            curl.exe -sS -L --retry 3 --max-time 900 -A "Mozilla/5.0" -o $out $url
+          } catch { }
+          if (-not (Test-Path $out) -or (Get-Item $out).Length -lt 40MB) {
+            Write-Host ">> 直连失败，改走 API 资产通道"
+            curl.exe -sS -L --retry 3 --max-time 900 -H "Authorization: Bearer $env:GH_TOKEN" -H "Accept: application/octet-stream" -o $out "https://api.github.com/repos/fxsound2/fxsound-app/releases/assets/$id"
+          }
+          $f = Get-Item $out
+          Write-Host "官方安装包: $([math]::Round($f.Length/1MB,2)) MB"
+          if ($f.Length -lt 40MB) { throw '官方安装包下载失败' }
+          (Get-FileHash $out -Algorithm SHA256).Hash | Out-File vendor\official.sha256 -Encoding ASCII
+
+      - name: 解包并定位程序目录
+        if: steps.gate.outputs.built == 'false'
+        id: unpack
+        shell: pwsh
+        run: |
+          $lines = & .\scripts\unpack_official.ps1 -SetupPath 'vendor\fxsound_setup.exe' -WorkDir 'work\unpack'
+          $lines | Write-Host
+          $root = ($lines | Where-Object { $_ -like 'APP_ROOT=*' } | Select-Object -Last 1) -replace '^APP_ROOT=', ''
+          if (-not $root) { throw '未取得 APP_ROOT' }
+          "app_root=$root" >> $env:GITHUB_OUTPUT
+          $drv = Get-ChildItem $root -Recurse -Filter 'dfx*.inf' -ErrorAction SilentlyContinue | Select-Object -First 1
+          "driver_inf=$($drv.FullName)" >> $env:GITHUB_OUTPUT
+          Write-Host "驱动 inf: $($drv.FullName)"
+
+      - name: 注入中文预设名
+        if: steps.gate.outputs.built == 'false'
+        shell: pwsh
+        run: |
+          python scripts/patch_presets.py --app-root '${{ steps.unpack.outputs.app_root }}'
+
+      - name: 组装便携版
+        if: steps.gate.outputs.built == 'false'
+        shell: pwsh
+        run: |
+          .\packaging\make_portable.ps1 -AppRoot '${{ steps.unpack.outputs.app_root }}' -Version '${{ steps.up.outputs.version }}' -OutDir 'dist'
+
+      - name: 生成安装器用预设名表
+        if: steps.gate.outputs.built == 'false'
+        shell: pwsh
+        run: |
+          python -c "import json,io; d=json.load(open('presets/preset-map.json',encoding='utf-8')); open('packaging/preset_names.tsv','w',encoding='utf-8',newline='').write(''.join(k+'\t'+v['zh']+'\n' for k,v in d['presets'].items()))"
+          Get-Content packaging\preset_names.tsv
+
+      - name: 编译安装版（Inno Setup）
+        if: steps.gate.outputs.built == 'false'
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y | Out-Null
+          $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) { $iscc = (Get-ChildItem 'C:\Program Files*\Inno Setup*\ISCC.exe' | Select-Object -First 1).FullName }
+          $env:FX_VERSION = '${{ steps.up.outputs.version }}'
+          & $iscc /Qp packaging\installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC 编译失败 exit=$LASTEXITCODE" }
+          Get-ChildItem dist | Format-Table Name, Length
+
+      - name: 汇总校验值
+        if: steps.gate.outputs.built == 'false'
+        shell: pwsh
+        run: |
+          $v = '${{ steps.up.outputs.version }}'
+          "@FxSound 中文预设增强版 $v`n上游版本: ${{ steps.up.outputs.tag }} (${{ steps.up.outputs.published_at }})`n官方安装包 SHA256: $(Get-Content vendor\official.sha256)" | Out-File dist\VERSION.txt -Encoding UTF8
+
+      - name: 上传产物（不发布 Release）
+        if: steps.gate.outputs.built == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fxsound-zh-${{ steps.up.outputs.version }}
+          path: dist/*
+          retention-days: 90
+
+      - name: 已存在同版本构建
+        if: steps.gate.outputs.built == 'true'
+        shell: pwsh
+        run: Write-Host "上游版本 ${{ steps.up.outputs.version }} 已构建过，跳过。需要重建请勾选 force。"

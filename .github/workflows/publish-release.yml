@@ -1,0 +1,54 @@
+name: publish-release
+
+# 【手动】把已构建好的 Artifact 发布为 GitHub Release。
+# 绝不由 follow-upstream 自动调用；只有主人明确说「同步」时才运行本工作流。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '要发布的版本号（与 Artifact 名 fxsound-zh-<version> 对应）'
+        required: true
+        type: string
+      draft:
+        description: '先建草稿（不公开下载）'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 查找对应 Artifact
+        id: find
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          NAME="fxsound-zh-${{ inputs.version }}"
+          ID=$(gh api "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
+               --jq ".artifacts[] | select(.name==\"$NAME\") | .id" | head -n1)
+          if [ -z "$ID" ]; then echo "::error::未找到 Artifact $NAME，请先运行 follow-upstream 或 workflow_dispatch 构建"; exit 1; fi
+          echo "artifact_id=$ID" >> $GITHUB_OUTPUT
+          echo "artifact_name=$NAME" >> $GITHUB_OUTPUT
+
+      - name: 下载 Artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p dist
+          gh api "repos/${{ github.repository }}/actions/artifacts/${{ steps.find.outputs.artifact_id }}/zip" > dist/artifact.zip
+          cd dist && unzip -o artifact.zip >/dev/null && find . -type f -size +1M -exec ls -lh {} \;
+
+      - name: 创建 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ inputs.version }}-zh"
+          gh release create "$TAG" dist/*.zip dist/*.exe dist/VERSION.txt \
+            --repo "${{ github.repository }}" \
+            --title "FxSound 中文预设增强版 ${{ inputs.version }}" \
+            --notes "跟随官方 ${{ inputs.version }} 的汉化封装版（安装版 + 便携版）。预设名汉化为中文，其余与官方一致。" \
+            ${{ inputs.draft && '--draft' || '' }}

@@ -1,0 +1,20 @@
+{
+  "_comment": "FxSound 预设名汉化映射。key 为上游 .fac 文件名，en 为上游第 3 行原始名称（英文），zh 为汉化后名称。patch_presets.py 以文件名+行号定位，不依赖 en 文本，故上游改名不会导致失效。",
+  "schema_version": 1,
+  "line_index": 2,
+  "presets": {
+    "1.fac":       { "en": "General",            "zh": "通用" },
+    "2.fac":       { "en": "Music",              "zh": "音乐" },
+    "3.fac":       { "en": "Voice",              "zh": "人声" },
+    "4.fac":       { "en": "Volume Boost",       "zh": "音量增强" },
+    "5.fac":       { "en": "Gaming",             "zh": "游戏" },
+    "6.fac":       { "en": "Classic Processing", "zh": "经典处理" },
+    "7.fac":       { "en": "Light Processing",   "zh": "轻处理" },
+    "8.fac":       { "en": "Bass Boost",         "zh": "低音增强" },
+    "9.fac":       { "en": "Streaming Video",    "zh": "流媒体视频" },
+    "10.fac":      { "en": "Movies",             "zh": "电影" },
+    "11.fac":      { "en": "TV",                 "zh": "电视" },
+    "12.fac":      { "en": "Transcription",      "zh": "语音转录" },
+    "Default.fac": { "en": "Default",            "zh": "默认" }
+  }
+}
