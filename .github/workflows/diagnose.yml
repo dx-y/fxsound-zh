@@ -1,0 +1,58 @@
+name: diagnose-package
+
+# 临时诊断：判断官方 fxsound_setup.exe 的安装器类型与内嵌 MSI 偏移。
+# 仅手动触发，不产出产物。
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diag:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: 下载官方安装包
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path vendor, work | Out-Null
+          $releases = Invoke-RestMethod -Uri 'https://api.github.com/repos/fxsound2/fxsound-app/releases/latest' -Headers @{ 'User-Agent' = 'diag' }
+          $asset = $releases.assets | Where-Object { $_.name -eq 'fxsound_setup.exe' } | Select-Object -First 1
+          Write-Host "tag=$($releases.tag_name) asset=$($asset.name) size=$($asset.size) id=$($asset.id)"
+          curl.exe -sS -L --retry 3 --max-time 900 -o vendor\fxsound_setup.exe $asset.browser_download_url
+          $f = Get-Item vendor\fxsound_setup.exe
+          Write-Host "downloaded $([math]::Round($f.Length/1MB,2)) MB"
+      - name: 结构诊断
+        shell: pwsh
+        run: |
+          python scripts/diag_package.py vendor\fxsound_setup.exe
+          Write-Host "=== 7z version ==="
+          & 7z | Select-Object -First 3
+          Write-Host "=== 7z list (first 40) ==="
+          & 7z l vendor\fxsound_setup.exe | Select-Object -First 40
+          Write-Host "=== PE version info ==="
+          (Get-Item vendor\fxsound_setup.exe).VersionInfo | Format-List | Out-String
+      - name: 尝试解包
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path work\a | Out-Null
+          & 7z x -y -owork\a vendor\fxsound_setup.exe | Select-Object -Last 12
+          Write-Host "=== 解出文件 ==="
+          Get-ChildItem work\a -Recurse -File | Select-Object -First 20 @{n='rel';e={$_.FullName.Substring((Resolve-Path work\a).Path.Length+1)}}, Length | Format-Table -AutoSize
+          Write-Host "=== 尝试 Advanced Installer 静默安装（120s 上限）==="
+          $p = Start-Process -FilePath vendor\fxsound_setup.exe -ArgumentList '/exenoui','/qn' -PassThru
+          if (-not $p.WaitForExit(120000)) { Write-Host ">> 120s 未退出，强杀"; try { $p.Kill() } catch {} } else { Write-Host "exit=$($p.ExitCode)" }
+          $dst = 'C:\Program Files\FxSound LLC\FxSound'
+          Write-Host "默认安装目录存在: $(Test-Path $dst)"
+          if (Test-Path $dst) { Get-ChildItem $dst -File | Select-Object -First 10 Name, Length | Format-Table -AutoSize }
+      - name: 尝试官网直链
+        shell: pwsh
+        run: |
+          foreach ($u in @('https://download.fxsound.com/fxsoundlatest','https://www.fxsound.com/download')) {
+            try { $r = Invoke-WebRequest -Uri $u -Method Head -MaximumRedirection 3 -TimeoutSec 30 -UserAgent 'Mozilla/5.0'; Write-Host "$u => $($r.StatusCode)" } catch { Write-Host "$u => ERR $($_.Exception.Message)" }
+          }
