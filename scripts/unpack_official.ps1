@@ -1,4 +1,4 @@
-# 从官方 setup.exe 解包出完整文件树，并定位 FxSound 程序根目录
+﻿# 从官方 setup.exe 解包出完整文件树，并定位 FxSound 程序根目录
 # 参数: -SetupPath <setup.exe> -WorkDir <工作目录>
 # 输出: 最后一行为 APP_ROOT=<绝对路径>
 param([Parameter(Mandatory=$true)][string]$SetupPath, [Parameter(Mandatory=$true)][string]$WorkDir)
