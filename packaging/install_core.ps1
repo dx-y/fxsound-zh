@@ -8,10 +8,10 @@ param(
 $ErrorActionPreference = 'Continue'
 $exe = Join-Path $TargetDir 'FxSound.exe'
 
-function Try-Silent([string]$args) {
-  Write-Host ">> 尝试官方安装参数: $args"
+function Try-Silent([string]$argList) {
+  Write-Host ">> 尝试官方安装参数: $argList"
   try {
-    $p = Start-Process -FilePath $OfficialSetup -ArgumentList $args -Wait -PassThru
+    $p = Start-Process -FilePath $OfficialSetup -ArgumentList $argList -Wait -PassThru
     Write-Host "   exit=$($p.ExitCode)"
   } catch { Write-Host "   异常: $($_.Exception.Message)" }
   Start-Sleep -Seconds 2

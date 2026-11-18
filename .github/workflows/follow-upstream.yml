@@ -84,6 +84,9 @@ jobs:
           $root = ($lines | Where-Object { $_ -like 'APP_ROOT=*' } | Select-Object -Last 1) -replace '^APP_ROOT=', ''
           if (-not $root) { throw '未取得 APP_ROOT' }
           "app_root=$root" >> $env:GITHUB_OUTPUT
+          $fv = ($lines | Where-Object { $_ -like 'FILE_VERSION=*' } | Select-Object -Last 1) -replace '^FILE_VERSION=', ''
+          "file_version=$fv" >> $env:GITHUB_OUTPUT
+          Write-Host "官方程序实际版本: $fv"
           $drv = Get-ChildItem $root -Recurse -Filter 'dfx*.inf' -ErrorAction SilentlyContinue | Select-Object -First 1
           "driver_inf=$($drv.FullName)" >> $env:GITHUB_OUTPUT
           Write-Host "驱动 inf: $($drv.FullName)"
