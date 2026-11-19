@@ -1,8 +1,10 @@
 name: follow-upstream
 
-# 只做「跟随官方最新版自动打包」，绝不自建 Release。
-# 产物以 Actions Artifact 形式留存（默认保留 90 天）；
-# 需要发布到 GitHub Release 时，请人工运行 publish-release.yml（主人明确说"同步"后才跑）。
+# 每天自动检查官方「正式版」，有新版本就自动打包并发布 Release。
+# - 只跟正式版（prerelease=false 的四段 tag）；beta 通道仅在手动运行时可用。
+# - 构建成功后自动发布，无需人工点 publish-release.yml。
+# - 已有同名 Release 或已构建过的版本会跳过，不会重复发布。
+# - 需要复发布/改草稿时，仍可手动运行 publish-release.yml。
 
 on:
   schedule:
@@ -20,12 +22,18 @@ on:
         default: false
 
 permissions:
-  contents: read
+  contents: write
   actions: read
 
 jobs:
   build:
     runs-on: windows-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      built: ${{ steps.gate.outputs.built }}
+      version: ${{ steps.up.outputs.version }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       PYTHONIOENCODING: utf-8
@@ -51,9 +59,14 @@ jobs:
           $names = @()
           try { $names = @(gh api "repos/${{ github.repository }}/actions/artifacts?per_page=100" --jq '.artifacts[].name') } catch { $names = @() }
           $built = $names -contains $want
+          # Artifact 只保留 90 天，过期后不能用它判断"已构建"，改看 Release tag
+          $relExists = $false
+          & gh release view "v$v-zh" --repo "${{ github.repository }}" 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0) { $relExists = $true }
+          if ($relExists) { $built = $true }
           if ($force) { $built = $false }
           "built=$($built.ToString().ToLower())" >> $env:GITHUB_OUTPUT
-          Write-Host "version=$v built=$built force=$force"
+          Write-Host "version=$v built=$built artifact=$($names -contains $want) release=$relExists force=$force"
           exit 0
 
       - name: 下载官方安装包
@@ -132,7 +145,7 @@ jobs:
           $v = '${{ steps.up.outputs.version }}'
           "@FxSound 中文预设增强版 $v`n上游版本: ${{ steps.up.outputs.tag }} (${{ steps.up.outputs.published_at }})`n官方安装包 SHA256: $(Get-Content vendor\official.sha256)" | Out-File dist\VERSION.txt -Encoding UTF8
 
-      - name: 上传产物（不发布 Release）
+      - name: 上传产物
         if: steps.gate.outputs.built == 'false'
         uses: actions/upload-artifact@v4
         with:
@@ -143,4 +156,53 @@ jobs:
       - name: 已存在同版本构建
         if: steps.gate.outputs.built == 'true'
         shell: pwsh
-        run: Write-Host "上游版本 ${{ steps.up.outputs.version }} 已构建过，跳过。需要重建请勾选 force。"
+        run: Write-Host "上游版本 ${{ steps.up.outputs.version }} 已构建/已发布过，跳过。需要重建请勾选 force。"
+
+  # 只有「正式版」且本次真的构建了才自动发布；beta 与已构建过的版本一律跳过。
+  publish:
+    needs: build
+    if: needs.build.outputs.built == 'true' && (github.event_name == 'schedule' || github.event.inputs.channel == 'stable')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      V: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: fxsound-zh-${{ needs.build.outputs.version }}
+          path: dist
+
+      - name: 已存在同名 Release 则跳过
+        id: dup
+        run: |
+          TAG="v${V}-zh"
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "Release $TAG 已存在，跳过发布"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 发布 Release
+        if: steps.dup.outputs.skip == 'false'
+        run: |
+          set -e
+          TAG="v${V}-zh"
+          ls -lh dist
+          {
+            echo "基于官方 ${V} 安装包，仅将预设显示名改为中文，其余与官方一致。"
+            echo ""
+            echo "- 安装版：\`FxSound-zh-CN-${V}-setup.exe\`"
+            echo "- 便携版：\`FxSound-zh-CN-${V}-portable.zip\`（解压后先以管理员身份运行 \`安装驱动.cmd\`，否则无输出设备）"
+            echo ""
+            echo "非官方版本，与 FxSound LLC 无隶属关系。程序、驱动与数字签名均为官方原件，未做修改。请支持官方正版：https://www.fxsound.com"
+            echo ""
+            echo "对应源码见上游仓库 https://github.com/fxsound2/fxsound-app （AGPL-3.0）。"
+          } > notes.md
+          gh release create "$TAG" dist/FxSound-zh-CN-*.zip dist/FxSound-zh-CN-*.exe dist/VERSION.txt \
+            --repo "${{ github.repository }}" \
+            --title "FxSound 中文预设增强版 ${V}" \
+            --notes-file notes.md
