@@ -161,7 +161,7 @@ jobs:
   # 只有「正式版」且本次真的构建了才自动发布；beta 与已构建过的版本一律跳过。
   publish:
     needs: build
-    if: needs.build.outputs.built == 'true' && (github.event_name == 'schedule' || github.event.inputs.channel == 'stable')
+    if: needs.build.outputs.built == 'false' && (github.event_name == 'schedule' || github.event.inputs.channel == 'stable')
     runs-on: ubuntu-latest
     permissions:
       contents: write
